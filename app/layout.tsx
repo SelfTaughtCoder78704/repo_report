@@ -23,8 +23,8 @@ export default function RootLayout({
   return (
     <ClerkProvider>
       <ConvexProviderWithClerk useAuth={useAuth} client={convexClient}>
-        <html lang="en">
-          <body>
+        <html lang="en" suppressHydrationWarning>
+          <body suppressHydrationWarning>
             <nav className="p-4">
               <SignedOut>
                 <SignInButton />

@@ -4,6 +4,7 @@ import { Webhook } from "svix";
 import { internal } from "./_generated/api";
 import { WebhookEvent } from "@clerk/nextjs/server";
 import { Id } from "./_generated/dataModel";
+import { api } from "./_generated/api";
 
 /**
  * Validates and verifies the incoming webhook payload from Clerk
@@ -114,12 +115,56 @@ const handleClerkWebhook = httpAction(
   }
 );
 
+export const handleGitHubInstallation = httpAction(async (ctx, request) => {
+  // Parse query parameters
+  const url = new URL(request.url);
+  const installationId = url.searchParams.get('installation_id');
+  const redirectUri = url.searchParams.get('redirect_uri') || 'http://localhost:3000/dashboard';
+
+  console.log("Installation parameters:", {
+    installationId,
+    redirectUri,
+    searchParams: Object.fromEntries(url.searchParams.entries()),
+  });
+
+  if (!installationId) {
+    return new Response('Missing installation_id', { status: 400 });
+  }
+
+  try {
+    // Call the Node.js action to handle the installation without user ID
+    await ctx.runAction(api.github.processInstallation, {
+      installationId: parseInt(installationId),
+      userId: undefined, // Make it optional
+    });
+
+    // Redirect to the provided redirect URI
+    return new Response(null, {
+      status: 302,
+      headers: {
+        'Location': redirectUri,
+        'Cache-Control': 'no-store',
+      },
+    });
+  } catch (error) {
+    console.error("Error in handleGitHubInstallation:", error);
+    const err = error as Error;
+    return new Response(err.message, { status: 500 });
+  }
+});
+
 const http = httpRouter();
 
 http.route({
   path: '/clerk-users-webhook',
   method: 'POST',
   handler: handleClerkWebhook
+});
+
+http.route({
+  path: '/github/handleGitHubInstallation',
+  method: 'GET',
+  handler: handleGitHubInstallation
 });
 
 export default http;

@@ -4,7 +4,7 @@ import { Id } from "./_generated/dataModel";
 
 export const storePullRequest = mutation({
   args: {
-    repositoryId: v.string(),
+    repositoryId: v.id("repositories"),
     prNumber: v.number(),
     title: v.string(),
     author: v.string(),
@@ -22,7 +22,7 @@ export const storePullRequest = mutation({
     // Check if PR already exists
     const existingPR = await ctx.db
       .query("pullRequests")
-      .withIndex("by_number", (q) => 
+      .withIndex("by_number", (q) =>
         q.eq("repositoryId", args.repositoryId)
          .eq("prNumber", args.prNumber)
       )
@@ -36,12 +36,12 @@ export const storePullRequest = mutation({
         updatedAt: args.updatedAt,
         closedAt: args.closedAt,
         mergedAt: args.mergedAt,
-      });
+});
     }
 
     // Create new PR
     return ctx.db.insert("pullRequests", {
-      repositoryId: args.repositoryId as Id<"repositories">,
+      repositoryId: args.repositoryId,
       prNumber: args.prNumber,
       title: args.title,
       author: args.author,
@@ -54,7 +54,7 @@ export const storePullRequest = mutation({
       mergedAt: args.mergedAt,
       diffUrl: args.diffUrl,
       htmlUrl: args.htmlUrl,
-    });
+      });
   },
 });
 

@@ -17,12 +17,27 @@ export default defineSchema({
     name: v.string(),
     owner: v.string(),
     installationId: v.number(),
-    accessToken: v.optional(v.string()),
     webhookSecret: v.string(),
-    createdBy: v.id("users"),
+    webhookId: v.optional(v.string()),
+    accessToken: v.optional(v.string()),
+    createdBy: v.optional(v.id("users")),
   })
     .index("by_owner_and_name", ["owner", "name"])
     .index("by_created_by", ["createdBy"]),
+
+  availableRepositories: defineTable({
+    repositories: v.array(
+      v.object({
+        id: v.number(),
+        name: v.string(),
+        owner: v.object({
+          login: v.string(),
+        }),
+        description: v.union(v.string(), v.null()),
+      })
+    ),
+    updatedAt: v.number(),
+  }),
 
   pullRequests: defineTable({
     repositoryId: v.id("repositories"),

@@ -96,10 +96,66 @@ function DiffViewer({
     return <div className="text-red-500">Error loading diff: {error}</div>;
   }
 
+  const renderDiff = () => {
+    const lines = diff.split("\n");
+    return lines.map((line, index) => {
+      let className = "pl-2 block hover:bg-gray-50 dark:hover:bg-gray-800";
+      let linePrefix = "  ";
+      let contentClass = "pl-8";
+
+      if (
+        line.startsWith("diff --git") ||
+        line.startsWith("index ") ||
+        line.startsWith("--- ") ||
+        line.startsWith("+++ ")
+      ) {
+        // Meta information lines
+        className +=
+          " bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-400 font-mono text-sm py-1";
+        contentClass = "pl-2";
+      } else if (line.startsWith("@@")) {
+        // Chunk header
+        className +=
+          " bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-400 font-mono text-sm py-1";
+        contentClass = "pl-2";
+      } else if (line.startsWith("+")) {
+        // Added lines
+        className +=
+          " bg-green-50 dark:bg-green-950 hover:bg-green-100 dark:hover:bg-green-900";
+        linePrefix = "+ ";
+        contentClass += " text-green-700 dark:text-green-400";
+      } else if (line.startsWith("-")) {
+        // Removed lines
+        className +=
+          " bg-red-50 dark:bg-red-950 hover:bg-red-100 dark:hover:bg-red-900";
+        linePrefix = "- ";
+        contentClass += " text-red-700 dark:text-red-400";
+      }
+
+      return (
+        <div key={index} className={className}>
+          <span className="float-left w-8 select-none text-gray-400 dark:text-gray-500 text-right pr-2 text-sm">
+            {!line.startsWith("diff") &&
+            !line.startsWith("index") &&
+            !line.startsWith("---") &&
+            !line.startsWith("+++")
+              ? linePrefix
+              : ""}
+          </span>
+          <span
+            className={`${contentClass} font-mono text-sm whitespace-pre dark:text-gray-200`}
+          >
+            {line}
+          </span>
+        </div>
+      );
+    });
+  };
+
   return (
-    <pre className="mt-4 p-4 bg-gray-50 rounded-lg overflow-x-auto text-sm whitespace-pre-wrap font-mono">
-      {diff}
-    </pre>
+    <div className="mt-4 border dark:border-gray-700 rounded-lg overflow-hidden bg-white dark:bg-gray-900">
+      <div className="overflow-x-auto">{renderDiff()}</div>
+    </div>
   );
 }
 
@@ -378,48 +434,50 @@ function DashboardContent() {
   const installUrl = `https://github.com/apps/ai-repo-report/installations/new?redirect_uri=${encodeURIComponent(redirectUri)}`;
 
   return (
-    <div className="container py-8">
-      <div className="flex justify-between items-center mb-8">
-        <div>
-          <h1 className="text-4xl font-bold">Repositories</h1>
-          <p className="text-muted-foreground">
-            Manage your connected GitHub repositories
-          </p>
+    <div className="h-full">
+      <div className="container mx-auto h-full py-8">
+        <div className="flex justify-between items-center mb-8">
+          <div>
+            <h1 className="text-4xl font-bold">Repositories</h1>
+            <p className="text-muted-foreground">
+              Manage your connected GitHub repositories
+            </p>
+          </div>
         </div>
-      </div>
 
-      <div className="space-y-4">
-        {repositories?.length === 0 ? (
-          <Card>
-            <CardHeader>
-              <CardTitle>No repositories connected</CardTitle>
-              <CardDescription>
-                Install the GitHub App to get started
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button asChild>
-                <a href={installUrl} className="flex items-center">
-                  <GitHubLogoIcon className="mr-2 h-4 w-4" />
-                  Install GitHub App
-                </a>
-              </Button>
-            </CardContent>
-          </Card>
-        ) : repositories ? (
-          <>
-            <div className="w-full max-w-2xl">
-              <RepositorySelector
-                repositories={repositories}
-                selectedRepo={selectedRepo}
-                onSelect={setSelectedRepo}
-              />
-            </div>
-            {selectedRepo && <RepositoryCard repo={selectedRepo} />}
-          </>
-        ) : (
-          <Skeleton className="h-[200px] w-full" />
-        )}
+        <div className="space-y-4">
+          {repositories?.length === 0 ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>No repositories connected</CardTitle>
+                <CardDescription>
+                  Install the GitHub App to get started
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button asChild>
+                  <a href={installUrl} className="flex items-center">
+                    <GitHubLogoIcon className="mr-2 h-4 w-4" />
+                    Install GitHub App
+                  </a>
+                </Button>
+              </CardContent>
+            </Card>
+          ) : repositories ? (
+            <>
+              <div className="w-full max-w-2xl">
+                <RepositorySelector
+                  repositories={repositories}
+                  selectedRepo={selectedRepo}
+                  onSelect={setSelectedRepo}
+                />
+              </div>
+              {selectedRepo && <RepositoryCard repo={selectedRepo} />}
+            </>
+          ) : (
+            <Skeleton className="h-[200px] w-full" />
+          )}
+        </div>
       </div>
     </div>
   );
@@ -427,7 +485,7 @@ function DashboardContent() {
 
 export default function DashboardPage() {
   return (
-    <div>
+    <div className="h-full">
       <SignedIn>
         <DashboardContent />
       </SignedIn>

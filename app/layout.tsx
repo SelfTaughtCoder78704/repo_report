@@ -1,19 +1,14 @@
-"use client";
-import {
-  ClerkProvider,
-  SignInButton,
-  SignedIn,
-  SignedOut,
-  UserButton,
-} from "@clerk/nextjs";
-import { useAuth } from "@clerk/clerk-react";
-import { ConvexProviderWithClerk } from "convex/react-clerk";
 import "./globals.css";
-import { ConvexReactClient } from "convex/react";
+import type { Metadata } from "next";
+import { Inter } from "next/font/google";
+import { Providers } from "./providers";
 
-const convexClient = new ConvexReactClient(
-  process.env.NEXT_PUBLIC_CONVEX_URL || ""
-);
+const inter = Inter({ subsets: ["latin"] });
+
+export const metadata: Metadata = {
+  title: "Repo Report",
+  description: "AI-powered GitHub repository insights",
+};
 
 export default function RootLayout({
   children,
@@ -21,22 +16,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <ClerkProvider>
-      <ConvexProviderWithClerk useAuth={useAuth} client={convexClient}>
-        <html lang="en" suppressHydrationWarning>
-          <body suppressHydrationWarning>
-            <nav className="p-4">
-              <SignedOut>
-                <SignInButton />
-              </SignedOut>
-              <SignedIn>
-                <UserButton />
-              </SignedIn>
-            </nav>
-            {children}
-          </body>
-        </html>
-      </ConvexProviderWithClerk>
-    </ClerkProvider>
+    <html lang="en" suppressHydrationWarning>
+      <body className={`${inter.className} bg-white dark:bg-[#050a18]`}>
+        <Providers>{children}</Providers>
+      </body>
+    </html>
   );
 }

@@ -84,17 +84,8 @@ export const listRepositoryPRs = query({
 });
 
 export const getPullRequest = query({
-  args: {
-    repositoryId: v.id("repositories"),
-    prNumber: v.number(),
-  },
-  handler: async (ctx, args) => {
-    return ctx.db
-      .query("pullRequests")
-      .withIndex("by_number", (q) => 
-        q.eq("repositoryId", args.repositoryId)
-         .eq("prNumber", args.prNumber)
-      )
-      .first();
+  args: { id: v.id("pullRequests") },
+  handler: async (ctx, { id }) => {
+    return await ctx.db.get(id);
   },
 }); 

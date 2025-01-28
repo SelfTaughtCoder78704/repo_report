@@ -56,6 +56,18 @@ export default defineSchema({
     model: v.string(), // e.g., "gpt-4-turbo-preview"
     promptTokens: v.number(),
     completionTokens: v.number(),
+    provider: v.string(), // 'anthropic' or 'openai'
   })
     .index("by_pull_request", ["pullRequestId"]),
+
+  providerKeys: defineTable({
+    userId: v.string(),
+    provider: v.string(),
+    encryptedKey: v.string(),
+    verifiedAt: v.number(),
+  })
+    .index("by_user_and_provider", ["userId", "provider"])
+    .searchIndex("search_by_user", {
+      searchField: "userId",
+    }),
 });

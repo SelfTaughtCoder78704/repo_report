@@ -17,7 +17,7 @@ import {
 } from "@radix-ui/react-icons";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SignedIn, SignedOut, RedirectToSignIn } from "@clerk/nextjs";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useUser } from "@clerk/nextjs";
 import { Id } from "@/convex/_generated/dataModel";
 import { cn } from "@/lib/utils";
@@ -26,6 +26,8 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import Link from "next/link";
+import { useToast } from "@/hooks/use-toast";
 
 interface Repository {
   _id: Id<"repositories">;
@@ -55,228 +57,129 @@ interface PullRequest {
   commitCount?: number;
 }
 
-function DiffViewer({
-  diffUrl,
-  installationId,
-}: {
-  diffUrl: string;
-  installationId: number;
-}) {
-  const [diff, setDiff] = useState<string>("");
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+function PRSummary({ pr }: { pr: PullRequest }) {
+  const { user } = useUser();
+  const { toast } = useToast();
+  const [isGenerating, setIsGenerating] = useState(false);
+  const summary = useQuery(api.prSummaries.getPRSummary, {
+    pullRequestId: pr._id,
+  });
+  const summarize = useAction(api.summarize.summarizePR);
 
-  useEffect(() => {
-    const fetchDiff = async () => {
-      try {
-        const response = await fetch(
-          `/api/github/diff?url=${encodeURIComponent(diffUrl)}&installationId=${installationId}`
-        );
-        if (!response.ok) {
-          throw new Error(await response.text());
-        }
-        const text = await response.text();
-        setDiff(text);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load diff");
-        console.error("Error fetching diff:", err);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchDiff();
-  }, [diffUrl, installationId]);
-
-  if (isLoading) {
-    return <Skeleton className="h-[100px] w-full" />;
-  }
-
-  if (error) {
-    return <div className="text-red-500">Error loading diff: {error}</div>;
-  }
-
-  const renderDiff = () => {
-    const lines = diff.split("\n");
-    return lines.map((line, index) => {
-      let className = "pl-2 block hover:bg-gray-50 dark:hover:bg-gray-800";
-      let linePrefix = "  ";
-      let contentClass = "pl-8";
-
-      if (
-        line.startsWith("diff --git") ||
-        line.startsWith("index ") ||
-        line.startsWith("--- ") ||
-        line.startsWith("+++ ")
-      ) {
-        // Meta information lines
-        className +=
-          " bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-400 font-mono text-sm py-1";
-        contentClass = "pl-2";
-      } else if (line.startsWith("@@")) {
-        // Chunk header
-        className +=
-          " bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-400 font-mono text-sm py-1";
-        contentClass = "pl-2";
-      } else if (line.startsWith("+")) {
-        // Added lines
-        className +=
-          " bg-green-50 dark:bg-green-950 hover:bg-green-100 dark:hover:bg-green-900";
-        linePrefix = "+ ";
-        contentClass += " text-green-700 dark:text-green-400";
-      } else if (line.startsWith("-")) {
-        // Removed lines
-        className +=
-          " bg-red-50 dark:bg-red-950 hover:bg-red-100 dark:hover:bg-red-900";
-        linePrefix = "- ";
-        contentClass += " text-red-700 dark:text-red-400";
-      }
-
-      return (
-        <div key={index} className={className}>
-          <span className="float-left w-8 select-none text-gray-400 dark:text-gray-500 text-right pr-2 text-sm">
-            {!line.startsWith("diff") &&
-            !line.startsWith("index") &&
-            !line.startsWith("---") &&
-            !line.startsWith("+++")
-              ? linePrefix
-              : ""}
-          </span>
-          <span
-            className={`${contentClass} font-mono text-sm whitespace-pre dark:text-gray-200`}
-          >
-            {line}
-          </span>
-        </div>
-      );
-    });
+  const handleGenerateSummary = async () => {
+    if (!user?.id) return;
+    setIsGenerating(true);
+    try {
+      await summarize({
+        userId: user.id,
+        pullRequestId: pr._id,
+      });
+      toast({
+        title: "Summary Generated",
+        description: "The PR summary has been generated successfully.",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description:
+          error instanceof Error ? error.message : "Failed to generate summary",
+        variant: "destructive",
+      });
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   return (
-    <div className="mt-4 border dark:border-gray-700 rounded-lg overflow-hidden bg-white dark:bg-gray-900">
-      <div className="overflow-x-auto">{renderDiff()}</div>
+    <div className="mt-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-semibold">Summary</h3>
+        {!summary && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleGenerateSummary}
+            disabled={isGenerating}
+          >
+            {isGenerating ? "Generating..." : "Generate Summary"}
+          </Button>
+        )}
+      </div>
+      {summary ? (
+        <Card className="mt-2">
+          <CardContent className="pt-4">
+            <p className="whitespace-pre-wrap">{summary.summary}</p>
+            <div className="mt-2 text-sm text-muted-foreground">
+              Generated by {summary.provider} ({summary.model})
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        <p className="mt-2 text-sm text-muted-foreground">
+          No summary available yet.
+        </p>
+      )}
     </div>
   );
 }
 
 function PullRequestList({
   repositoryId,
-  installationId,
 }: {
   repositoryId: Id<"repositories">;
-  installationId: number;
 }) {
-  const pullRequests = useQuery(api.pullRequests.listRepositoryPRs, {
-    repositoryId,
-  }) as PullRequest[] | undefined;
-  const [expandedPRs, setExpandedPRs] = useState<Set<Id<"pullRequests">>>(
-    new Set()
-  );
+  const prs = useQuery(api.pullRequests.listRepositoryPRs, { repositoryId });
 
-  const togglePR = (prId: Id<"pullRequests">) => {
-    setExpandedPRs((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(prId)) {
-        newSet.delete(prId);
-      } else {
-        newSet.add(prId);
-      }
-      return newSet;
-    });
-  };
-
-  if (!pullRequests) {
-    return <Skeleton className="h-[100px] w-full" />;
-  }
-
-  if (pullRequests.length === 0) {
+  if (!prs?.length) {
     return (
-      <div className="text-sm text-muted-foreground">
-        No pull requests found
+      <div className="text-center py-4 text-muted-foreground">
+        No pull requests found.
       </div>
     );
   }
 
   return (
-    <div className="space-y-2">
-      {pullRequests.map((pr) => (
+    <div className="space-y-4">
+      {prs.map((pr) => (
         <Card key={pr._id}>
-          <CardHeader className="p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex-grow">
-                <div className="flex items-center gap-2">
-                  <CardTitle className="text-base">
-                    <a
-                      href={pr.htmlUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="hover:underline"
-                    >
-                      #{pr.prNumber} {pr.title}
-                    </a>
-                  </CardTitle>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 px-2"
-                    onClick={() => togglePR(pr._id)}
-                  >
-                    {expandedPRs.has(pr._id) ? "Hide Diff" : "Show Diff"}
-                  </Button>
-                </div>
-                <CardDescription>
-                  Opened by {pr.author} on{" "}
-                  {new Date(pr.createdAt).toLocaleDateString()}
-                </CardDescription>
-                {(pr.changedFiles !== undefined ||
-                  pr.additions !== undefined ||
-                  pr.deletions !== undefined ||
-                  pr.commitCount !== undefined) && (
-                  <div className="mt-2 flex gap-4 text-sm text-muted-foreground">
-                    {pr.changedFiles !== undefined && (
-                      <span title="Changed Files">
-                        📁 {pr.changedFiles}{" "}
-                        {pr.changedFiles === 1 ? "file" : "files"}
-                      </span>
-                    )}
-                    {pr.additions !== undefined &&
-                      pr.deletions !== undefined && (
-                        <span title="Lines Added/Removed">
-                          +{pr.additions}/-{pr.deletions}
-                        </span>
-                      )}
-                    {pr.commitCount !== undefined && (
-                      <span title="Commits">
-                        📦 {pr.commitCount}{" "}
-                        {pr.commitCount === 1 ? "commit" : "commits"}
-                      </span>
-                    )}
-                  </div>
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between">
+              <a
+                href={pr.htmlUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:underline"
+              >
+                {pr.title}
+              </a>
+              <span
+                className={cn(
+                  "text-sm px-2 py-1 rounded-full",
+                  pr.state === "open"
+                    ? "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-100"
+                    : "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-100"
                 )}
+              >
+                {pr.state}
+              </span>
+            </CardTitle>
+            <CardDescription>
+              <div className="flex items-center gap-4">
+                <span>#{pr.prNumber}</span>
+                <span>by {pr.author}</span>
+                <span>{new Date(pr.createdAt).toLocaleDateString()}</span>
               </div>
-              <div>
-                <span
-                  className={`px-2 py-1 text-xs font-medium rounded-full ${
-                    pr.state === "open"
-                      ? "bg-green-100 text-green-800"
-                      : pr.state === "closed"
-                        ? "bg-red-100 text-red-800"
-                        : "bg-purple-100 text-purple-800"
-                  }`}
-                >
-                  {pr.state}
-                </span>
+              <div className="mt-2 flex items-center gap-4 text-sm">
+                <span>{pr.changedFiles} files</span>
+                <span className="text-green-600">+{pr.additions}</span>
+                <span className="text-red-600">-{pr.deletions}</span>
+                <span>{pr.commitCount} commits</span>
               </div>
-            </div>
+            </CardDescription>
           </CardHeader>
-          {expandedPRs.has(pr._id) && (
-            <CardContent>
-              <DiffViewer
-                diffUrl={pr.diffUrl}
-                installationId={installationId}
-              />
-            </CardContent>
-          )}
+          <CardContent>
+            <PRSummary pr={pr} />
+          </CardContent>
         </Card>
       ))}
     </div>
@@ -405,10 +308,7 @@ function RepositoryCard({ repo }: { repo: Repository }) {
         {repo.webhookId && (
           <div className="mt-4">
             <h3 className="text-lg font-semibold mb-2">Pull Requests</h3>
-            <PullRequestList
-              repositoryId={repo._id}
-              installationId={repo.installationId}
-            />
+            <PullRequestList repositoryId={repo._id} />
           </div>
         )}
       </CardContent>
@@ -443,6 +343,9 @@ function DashboardContent() {
               Manage your connected GitHub repositories
             </p>
           </div>
+          <Link href="/settings">
+            <Button variant="outline">Settings</Button>
+          </Link>
         </div>
 
         <div className="space-y-4">

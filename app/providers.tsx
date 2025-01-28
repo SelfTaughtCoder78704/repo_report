@@ -12,6 +12,7 @@ import { ConvexProviderWithClerk } from "convex/react-clerk";
 import { ConvexReactClient } from "convex/react";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { Toaster } from "@/components/ui/toaster";
 
 const convexClient = new ConvexReactClient(
   process.env.NEXT_PUBLIC_CONVEX_URL || ""
@@ -41,6 +42,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
             </nav>
             <main className="flex-1 overflow-auto px-4">{children}</main>
           </div>
+          <Toaster />
         </ThemeProvider>
       </ConvexProviderWithClerk>
     </ClerkProvider>

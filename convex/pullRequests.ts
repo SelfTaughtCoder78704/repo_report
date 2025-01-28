@@ -17,6 +17,10 @@ export const storePullRequest = mutation({
     mergedAt: v.optional(v.number()),
     diffUrl: v.string(),
     htmlUrl: v.string(),
+    changedFiles: v.number(),
+    additions: v.number(),
+    deletions: v.number(),
+    commitCount: v.number(),
   },
   handler: async (ctx, args) => {
     // Check if PR already exists
@@ -36,7 +40,11 @@ export const storePullRequest = mutation({
         updatedAt: args.updatedAt,
         closedAt: args.closedAt,
         mergedAt: args.mergedAt,
-});
+        changedFiles: args.changedFiles,
+        additions: args.additions,
+        deletions: args.deletions,
+        commitCount: args.commitCount,
+      });
     }
 
     // Create new PR
@@ -54,7 +62,11 @@ export const storePullRequest = mutation({
       mergedAt: args.mergedAt,
       diffUrl: args.diffUrl,
       htmlUrl: args.htmlUrl,
-      });
+      changedFiles: args.changedFiles,
+      additions: args.additions,
+      deletions: args.deletions,
+      commitCount: args.commitCount,
+    });
   },
 });
 
@@ -68,5 +80,21 @@ export const listRepositoryPRs = query({
       .withIndex("by_repository", (q) => q.eq("repositoryId", args.repositoryId))
       .order("desc")
       .collect();
+  },
+});
+
+export const getPullRequest = query({
+  args: {
+    repositoryId: v.id("repositories"),
+    prNumber: v.number(),
+  },
+  handler: async (ctx, args) => {
+    return ctx.db
+      .query("pullRequests")
+      .withIndex("by_number", (q) => 
+        q.eq("repositoryId", args.repositoryId)
+         .eq("prNumber", args.prNumber)
+      )
+      .first();
   },
 }); 

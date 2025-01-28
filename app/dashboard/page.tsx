@@ -8,22 +8,24 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 import { api } from "@/convex/_generated/api";
 import { useQuery, useAction } from "convex/react";
-import { GitHubLogoIcon, PlusIcon } from "@radix-ui/react-icons";
+import {
+  GitHubLogoIcon,
+  CheckIcon,
+  CaretSortIcon,
+} from "@radix-ui/react-icons";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SignedIn, SignedOut, RedirectToSignIn } from "@clerk/nextjs";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useUser } from "@clerk/nextjs";
 import { Id } from "@/convex/_generated/dataModel";
+import { cn } from "@/lib/utils";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 interface Repository {
   _id: Id<"repositories">;
@@ -35,54 +37,345 @@ interface Repository {
   createdBy?: string;
 }
 
+interface PullRequest {
+  _id: Id<"pullRequests">;
+  prNumber: number;
+  title: string;
+  author: string;
+  state: string;
+  createdAt: number;
+  updatedAt: number;
+  closedAt?: number;
+  mergedAt?: number;
+  htmlUrl: string;
+  diffUrl: string;
+  changedFiles?: number;
+  additions?: number;
+  deletions?: number;
+  commitCount?: number;
+}
+
+function DiffViewer({
+  diffUrl,
+  installationId,
+}: {
+  diffUrl: string;
+  installationId: number;
+}) {
+  const [diff, setDiff] = useState<string>("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchDiff = async () => {
+      try {
+        const response = await fetch(
+          `/api/github/diff?url=${encodeURIComponent(diffUrl)}&installationId=${installationId}`
+        );
+        if (!response.ok) {
+          throw new Error(await response.text());
+        }
+        const text = await response.text();
+        setDiff(text);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load diff");
+        console.error("Error fetching diff:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchDiff();
+  }, [diffUrl, installationId]);
+
+  if (isLoading) {
+    return <Skeleton className="h-[100px] w-full" />;
+  }
+
+  if (error) {
+    return <div className="text-red-500">Error loading diff: {error}</div>;
+  }
+
+  return (
+    <pre className="mt-4 p-4 bg-gray-50 rounded-lg overflow-x-auto text-sm whitespace-pre-wrap font-mono">
+      {diff}
+    </pre>
+  );
+}
+
+function PullRequestList({
+  repositoryId,
+  installationId,
+}: {
+  repositoryId: Id<"repositories">;
+  installationId: number;
+}) {
+  const pullRequests = useQuery(api.pullRequests.listRepositoryPRs, {
+    repositoryId,
+  }) as PullRequest[] | undefined;
+  const [expandedPRs, setExpandedPRs] = useState<Set<Id<"pullRequests">>>(
+    new Set()
+  );
+
+  const togglePR = (prId: Id<"pullRequests">) => {
+    setExpandedPRs((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(prId)) {
+        newSet.delete(prId);
+      } else {
+        newSet.add(prId);
+      }
+      return newSet;
+    });
+  };
+
+  if (!pullRequests) {
+    return <Skeleton className="h-[100px] w-full" />;
+  }
+
+  if (pullRequests.length === 0) {
+    return (
+      <div className="text-sm text-muted-foreground">
+        No pull requests found
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {pullRequests.map((pr) => (
+        <Card key={pr._id}>
+          <CardHeader className="p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex-grow">
+                <div className="flex items-center gap-2">
+                  <CardTitle className="text-base">
+                    <a
+                      href={pr.htmlUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="hover:underline"
+                    >
+                      #{pr.prNumber} {pr.title}
+                    </a>
+                  </CardTitle>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2"
+                    onClick={() => togglePR(pr._id)}
+                  >
+                    {expandedPRs.has(pr._id) ? "Hide Diff" : "Show Diff"}
+                  </Button>
+                </div>
+                <CardDescription>
+                  Opened by {pr.author} on{" "}
+                  {new Date(pr.createdAt).toLocaleDateString()}
+                </CardDescription>
+                {(pr.changedFiles !== undefined ||
+                  pr.additions !== undefined ||
+                  pr.deletions !== undefined ||
+                  pr.commitCount !== undefined) && (
+                  <div className="mt-2 flex gap-4 text-sm text-muted-foreground">
+                    {pr.changedFiles !== undefined && (
+                      <span title="Changed Files">
+                        📁 {pr.changedFiles}{" "}
+                        {pr.changedFiles === 1 ? "file" : "files"}
+                      </span>
+                    )}
+                    {pr.additions !== undefined &&
+                      pr.deletions !== undefined && (
+                        <span title="Lines Added/Removed">
+                          +{pr.additions}/-{pr.deletions}
+                        </span>
+                      )}
+                    {pr.commitCount !== undefined && (
+                      <span title="Commits">
+                        📦 {pr.commitCount}{" "}
+                        {pr.commitCount === 1 ? "commit" : "commits"}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+              <div>
+                <span
+                  className={`px-2 py-1 text-xs font-medium rounded-full ${
+                    pr.state === "open"
+                      ? "bg-green-100 text-green-800"
+                      : pr.state === "closed"
+                        ? "bg-red-100 text-red-800"
+                        : "bg-purple-100 text-purple-800"
+                  }`}
+                >
+                  {pr.state}
+                </span>
+              </div>
+            </div>
+          </CardHeader>
+          {expandedPRs.has(pr._id) && (
+            <CardContent>
+              <DiffViewer
+                diffUrl={pr.diffUrl}
+                installationId={installationId}
+              />
+            </CardContent>
+          )}
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+function RepositorySelector({
+  repositories,
+  selectedRepo,
+  onSelect,
+}: {
+  repositories: Repository[];
+  selectedRepo: Repository | null;
+  onSelect: (repo: Repository | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+
+  const filteredRepos = repositories.filter((repo) =>
+    `${repo.owner}/${repo.name}`.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className="w-full justify-between"
+        >
+          {selectedRepo
+            ? `${selectedRepo.owner}/${selectedRepo.name}`
+            : "Select a repository..."}
+          <CaretSortIcon className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-full p-2" align="start">
+        <div className="flex flex-col space-y-2">
+          <input
+            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+            placeholder="Search repositories..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          <div className="max-h-[300px] overflow-y-auto">
+            {filteredRepos.length === 0 ? (
+              <div className="py-6 text-center text-sm text-muted-foreground">
+                No repositories found.
+              </div>
+            ) : (
+              filteredRepos.map((repo) => (
+                <Button
+                  key={repo._id}
+                  variant="ghost"
+                  className="w-full justify-start gap-2"
+                  onClick={() => {
+                    onSelect(selectedRepo?._id === repo._id ? null : repo);
+                    setOpen(false);
+                  }}
+                >
+                  <CheckIcon
+                    className={cn(
+                      "h-4 w-4",
+                      selectedRepo?._id === repo._id
+                        ? "opacity-100"
+                        : "opacity-0"
+                    )}
+                  />
+                  <span>
+                    {repo.owner}/{repo.name}
+                  </span>
+                </Button>
+              ))
+            )}
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function RepositoryCard({ repo }: { repo: Repository }) {
+  const [isConfiguring, setIsConfiguring] = useState(false);
+  const setupWebhook = useAction(api.github.setupRepositoryWebhooks);
+
+  const handleSetupWebhook = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      setIsConfiguring(true);
+      await setupWebhook({ repositoryId: repo._id });
+    } catch (error) {
+      console.error("Error setting up webhook:", error);
+      alert("Failed to set up webhook. Please try again.");
+    } finally {
+      setIsConfiguring(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{`${repo.owner}/${repo.name}`}</CardTitle>
+        <CardDescription>
+          Installation ID: {repo.installationId}
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="flex justify-between items-center mb-4">
+          <div>
+            <p>
+              Webhook Status:{" "}
+              {repo.webhookId ? (
+                <span className="text-green-600">Configured</span>
+              ) : (
+                <span className="text-yellow-600">Not Configured</span>
+              )}
+            </p>
+          </div>
+          {!repo.webhookId && (
+            <Button onClick={handleSetupWebhook} disabled={isConfiguring}>
+              {isConfiguring ? "Configuring..." : "Configure Webhook"}
+            </Button>
+          )}
+        </div>
+        {repo.webhookId && (
+          <div className="mt-4">
+            <h3 className="text-lg font-semibold mb-2">Pull Requests</h3>
+            <PullRequestList
+              repositoryId={repo._id}
+              installationId={repo.installationId}
+            />
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function DashboardContent() {
   const { user, isLoaded } = useUser();
   const repositories = useQuery(api.repos.listUserRepositories) as
     | Repository[]
     | undefined;
-  const availableRepositories = useQuery(
-    api.repos.listAvailableRepositories
-  ) as Repository[] | undefined;
-  const [isOpen, setIsOpen] = useState(false);
-  const [isConfiguring, setIsConfiguring] = useState<Id<"repositories"> | null>(
-    null
-  );
-
-  // Change to useAction
-  const setupWebhook = useAction(api.github.setupRepositoryWebhooks);
+  const [selectedRepo, setSelectedRepo] = useState<Repository | null>(null);
 
   if (!isLoaded || !user) {
     return <Skeleton className="h-[200px] w-full" />;
   }
 
-  // Log the available user identifiers
-  console.log("User identifiers:", {
-    id: user.id,
-    primaryEmailAddressId: user.primaryEmailAddressId,
-    lastSignInAt: user.lastSignInAt,
-    createdAt: user.createdAt,
-    primaryEmail: user.primaryEmailAddress?.emailAddress,
-  });
-
-  // Use only the redirect URI without the state parameter
   const redirectUri =
     typeof window !== "undefined"
       ? `${window.location.origin}/dashboard`
       : "http://localhost:3000/dashboard";
   const installUrl = `https://github.com/apps/ai-repo-report/installations/new?redirect_uri=${encodeURIComponent(redirectUri)}`;
-
-  const handleSetupWebhook = async (repoId: Id<"repositories">) => {
-    try {
-      setIsConfiguring(repoId);
-      await setupWebhook({ repositoryId: repoId });
-      // No need to refresh as the query will automatically update
-    } catch (error) {
-      console.error("Error setting up webhook:", error);
-      alert("Failed to set up webhook. Please try again.");
-    } finally {
-      setIsConfiguring(null);
-    }
-  };
 
   return (
     <div className="container py-8">
@@ -93,36 +386,10 @@ function DashboardContent() {
             Manage your connected GitHub repositories
           </p>
         </div>
-        <Dialog open={isOpen} onOpenChange={setIsOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <PlusIcon className="mr-2 h-4 w-4" />
-              Add Repository
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Add Repository</DialogTitle>
-              <DialogDescription>
-                Select a repository to connect to AI Repo Report
-              </DialogDescription>
-            </DialogHeader>
-            <div className="grid gap-4">
-              {availableRepositories?.map((repo: Repository) => (
-                <Card key={repo._id}>
-                  <CardHeader>
-                    <CardTitle>{repo.name}</CardTitle>
-                    <CardDescription>{repo.description}</CardDescription>
-                  </CardHeader>
-                </Card>
-              ))}
-            </div>
-          </DialogContent>
-        </Dialog>
       </div>
 
-      <div className="grid gap-4">
-        {repositories?.length === 0 && (
+      <div className="space-y-4">
+        {repositories?.length === 0 ? (
           <Card>
             <CardHeader>
               <CardTitle>No repositories connected</CardTitle>
@@ -139,40 +406,20 @@ function DashboardContent() {
               </Button>
             </CardContent>
           </Card>
+        ) : repositories ? (
+          <>
+            <div className="w-full max-w-2xl">
+              <RepositorySelector
+                repositories={repositories}
+                selectedRepo={selectedRepo}
+                onSelect={setSelectedRepo}
+              />
+            </div>
+            {selectedRepo && <RepositoryCard repo={selectedRepo} />}
+          </>
+        ) : (
+          <Skeleton className="h-[200px] w-full" />
         )}
-
-        {repositories?.map((repo: Repository) => (
-          <Card key={repo._id}>
-            <CardHeader>
-              <CardTitle>{`${repo.owner}/${repo.name}`}</CardTitle>
-              <CardDescription>
-                Installation ID: {repo.installationId}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex justify-between items-center">
-              <div>
-                <p>
-                  Webhook Status:{" "}
-                  {repo.webhookId ? (
-                    <span className="text-green-600">Configured</span>
-                  ) : (
-                    <span className="text-yellow-600">Not Configured</span>
-                  )}
-                </p>
-              </div>
-              {!repo.webhookId && (
-                <Button
-                  onClick={() => handleSetupWebhook(repo._id)}
-                  disabled={isConfiguring === repo._id}
-                >
-                  {isConfiguring === repo._id
-                    ? "Configuring..."
-                    : "Configure Webhook"}
-                </Button>
-              )}
-            </CardContent>
-          </Card>
-        ))}
       </div>
     </div>
   );

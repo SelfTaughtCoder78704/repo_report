@@ -25,20 +25,6 @@ export default defineSchema({
     .index("by_owner_and_name", ["owner", "name"])
     .index("by_created_by", ["createdBy"]),
 
-  availableRepositories: defineTable({
-    repositories: v.array(
-      v.object({
-        id: v.number(),
-        name: v.string(),
-        owner: v.object({
-          login: v.string(),
-        }),
-        description: v.union(v.string(), v.null()),
-      })
-    ),
-    updatedAt: v.number(),
-  }),
-
   pullRequests: defineTable({
     repositoryId: v.id("repositories"),
     prNumber: v.number(),
@@ -53,6 +39,11 @@ export default defineSchema({
     mergedAt: v.optional(v.number()),
     diffUrl: v.string(),
     htmlUrl: v.string(),
+    // Additional PR details - optional for backward compatibility
+    changedFiles: v.optional(v.number()),
+    additions: v.optional(v.number()),
+    deletions: v.optional(v.number()),
+    commitCount: v.optional(v.number()),
   })
     .index("by_repository", ["repositoryId"])
     .index("by_number", ["repositoryId", "prNumber"])
